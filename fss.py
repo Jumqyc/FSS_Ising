@@ -40,12 +40,14 @@ class fss:
 
     def load_raw_data(self,ext_e_data:np.ndarray,ext_m_data:np.ndarray,T:float,L:int,block_size:int = 20):
         """
-        Add raw data to this object. 
+        Add raw data to this object. Please add the data one by one, not all at once.
         Args:
-            data (np.ndarray): The raw data to be added.
+            ext_e_data (np.ndarray): The energy data to be added.
+            ext_m_data (np.ndarray): The magnetization data to be added.
             T (float): The temperature at which the data was collected.
             L (int): The system size.
-            type (str): The type of data, either 'e' for energy or 'm' for magnetization.
+        Raises:
+            ValueError: If the length of energy and magnetization data is not the same.
         """
         if len(ext_e_data) != len(ext_m_data):
             raise ValueError("The length of energy and magnetization data must be the same.")
@@ -68,18 +70,19 @@ class fss:
 
         self.raw[L].append(raw_data(T=T, M=ext_m_data, E=ext_e_data))
 
-    def is_in(self,L:int,T:float)-> bool:
+    def is_in(self,L:int,T:float,dT:float=10**-5)-> bool:
         """
         Check if the data for a specific system size and temperature is already stored.
         Args:
             L (int): The system size.
             T (float): The temperature.
+            dT (float): The tolerance for temperature comparison. Default is 10^-5.
         Returns:
             bool: True if the data is already stored, False otherwise.
         """
         if L in self.raw.keys():
             for entry in self.raw[L]:
-                if abs(entry.T - T)<10**-5 :
+                if abs(entry.T - T) < dT:
                     return True
         return False
     
@@ -90,9 +93,9 @@ class fss:
         for L in self.raw.keys():
             self.raw[L].sort(key=lambda x: x.T)
 
-    def see_loaded(self):
+    def see_loaded(self)-> None:
         """
-        print all the data stored in this object.
+        Print all the data stored in this object.
         """
         for L, data in self.raw.items():
             print(f"Data for L={L}:")
@@ -116,7 +119,14 @@ class fss:
         raise ValueError("No data found for the specified system size.")
 
 
-    def _rtime(self, data:np.ndarray):
+    def _rtime(self, data:np.ndarray)->int:
+        """
+        Calculate autocorrelation time for given time series data.
+        Args:
+            data : a 1D numpy array of time series data.
+        """
+        data = data.flatten() # ensure data is 1D
+
         N = len(data)
         data = data - np.mean(data)  # calculate variance around mean
         var = np.var(data, ddof=1)
@@ -134,8 +144,20 @@ class fss:
         rtime = int(0.5 + np.sum(acf[1:k_max+1]))+1
         return 6*rtime 
 
-    def ensemble_avg(self,f:Callable[[np.ndarray, np.ndarray, int, float], np.ndarray]):
-        """Update one dictionary, containing the average and error of the data."""
+    def _ensemble_avg(self,f:Callable[[np.ndarray, np.ndarray, int, float], np.ndarray]):
+        """
+        Update self.processed, containing the average and error of the data based on the function f.
+        Args:
+            f (Callable): A function that takes magnetization, energy, system size, and temperature as arguments and returns a scalar value.
+        >>> _ensemble_avg(lambda m, e, L, T: np.mean(m)) 
+        # Computes the average magnetization.
+
+        >>> _ensemble_avg(lambda m, e, L, T: np.mean(e*m))
+        # Computes the average of energy times magnetization.
+
+        >>> _ensemble_avg(lambda m, e, L, T: np.mean(np.abs(m)/L**2))
+        # Computes the average of absolute magnetization divided by L^2.
+        """
         self.processed = {}
 
         for L ,data in self.raw.items():
@@ -147,7 +169,10 @@ class fss:
                 for i in range(np.size(m,axis=1)):
                     m_jack = np.delete(m, i, axis=1)
                     e_jack = np.delete(e, i, axis=1)
-                    Q_jack.append(f(m=m_jack, e=e_jack, L=L, T=t))
+                    try:
+                        Q_jack.append(f(m=m_jack, e=e_jack, L=L, T=t))
+                    except:
+                        raise RuntimeError("Error in function evaluation. Check the function f.")
                 Q_jack = np.array(Q_jack)
                 Q_avg = np.mean(Q_jack)
                 Q_err = np.sqrt((len(Q_jack) - 1) / len(Q_jack)) * np.std(Q_jack, ddof=1)
@@ -177,9 +202,20 @@ class fss:
 
 
     def plot(self,f:str | Callable,scale = False):
+        """
+        Plot the processed data based on the function f.
+        Args:
+            f (str | Callable): The function to plot the data. If a string is provided, it will be converted to a lambda function.
+            scale (bool): If True, scale the data according to the best fit parameters.
+        >>> data.plot(lambda m, e, L, T: np.mean(m/L**2))
+        # Plots the average magnetization per site
+        >>> data.plot('<m/L**2>') # this one will also work
+
+        >>> data.plot('(<m**2>-<m**2>)/L**2/T') # susceptibility
+        """
         if isinstance(f, str):
             f = self._str2lambda(f)
-        self.ensemble_avg(f)
+        self._ensemble_avg(f)
         for L, data in self.processed.items():
             if scale:
                 T =( np.array([x.T for x in data]) - self.T_c)/self.T_c * L**self.b_best
@@ -195,13 +231,17 @@ class fss:
 
     def fit_a(self,f:str|Callable):
         """
-    Fit the data based on scaling hypothesis Q ~ L^{-a} f(t L^{1/nu}). So Q_max ~ L^{-a}.
+        Fit the data based on scaling hypothesis Q ~ L^{-a} f(t L^{1/nu}). So Q_max ~ L^{-a}.
         Args:
             f (Callable): The function to fit the data.
+        >>> data.fit_a(data.logd[2]) # Built in dlog<m^k>/dt function.
+        Fitted a: 1.009 ± 0.024
+        >>> data.fit_a(data.binderd[2]) # Built in d B_2k/dt function.
+        Fitted a: 0.953 ± 0.041
         """
         if isinstance(f, str):
             f = self._str2lambda(f)
-        self.ensemble_avg(f)
+        self._ensemble_avg(f)
         l_list = []
         y = []
         for L, data in self.processed.items():
@@ -210,7 +250,6 @@ class fss:
         result = linregress(np.log(np.array(l_list)), np.log(np.array(y)))
         print(f"Fitted a: {result.slope:.3f} ± {result.stderr:.3f}")
 
-        
 
     def fit_Tc(self,f):
         """
@@ -220,7 +259,7 @@ class fss:
         """
         if isinstance(f, str):
             f = self._str2lambda(f)
-        self.ensemble_avg(f)
+        self._ensemble_avg(f)
         l_list = []
         y = []
         for L, data in self.processed.items():
