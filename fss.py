@@ -1,7 +1,6 @@
 from typing import NamedTuple
 import numpy as np
 import matplotlib.pyplot as plt
-from scipy.interpolate import interp1d
 from typing import Callable
 from scipy.stats import linregress 
 raw_data = NamedTuple('raw_data', [('T', float), ('M', np.ndarray),('E', np.ndarray)])
@@ -9,8 +8,13 @@ result = NamedTuple('result', [("T",float),('avg', float), ('err', float)])
 
 class fss:
     def __init__(self) -> None:
-        self.raw :dict = {}
-        self.processed = {}
+        """
+        A python module to handle finite size scaling data.
+        It can read data from pickle files, process it, and plot the results.
+        """
+    
+        self.raw :dict[int, list[raw_data]] = {}
+        self.processed :dict[int,list[result]]= {}
         self.T_c = 0
         self.a_best = 0
         self.b_best = 0
@@ -34,9 +38,7 @@ class fss:
             # ((<e* m^2k> - <e>*<m^2k>) / <m^k>^2 - 2 <e* m^2k>(<e m^k>-<e>*<m^k>) / <m^k>^3)/T**2
             self.binderd.append(binderd_k)
 
-
-
-    def add_raw_data(self,ext_e_data:np.ndarray,ext_m_data:np.ndarray,T:float,L:int,block_size:int = 20):
+    def load_raw_data(self,ext_e_data:np.ndarray,ext_m_data:np.ndarray,T:float,L:int,block_size:int = 20):
         """
         Add raw data to this object. 
         Args:
@@ -81,14 +83,14 @@ class fss:
                     return True
         return False
     
-    def _sort_data(self):
+    def _sort(self):
         """
         Sort the data by temperature.
         """
         for L in self.raw.keys():
             self.raw[L].sort(key=lambda x: x.T)
 
-    def see_all_data(self):
+    def see_loaded(self):
         """
         print all the data stored in this object.
         """
@@ -150,21 +152,6 @@ class fss:
                 Q_avg = np.mean(Q_jack)
                 Q_err = np.sqrt((len(Q_jack) - 1) / len(Q_jack)) * np.std(Q_jack, ddof=1)
                 self.processed[L].append(result(T=t, avg=Q_avg, err=Q_err))
-
-
-
-    def _interpolate(self):
-        """for each system size L, create an interpolation function for the processed data."""
-        output = {}
-        for L , data in self.processed.items():
-            output[L] = interp1d(
-                [x.T for x in data],
-                [x.avg for x in data],
-                kind='linear',
-                bounds_error=False,
-                fill_value=np.nan
-            )
-        return output
 
     def _str2lambda(self, expr:str)-> Callable:
         """

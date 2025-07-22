@@ -5,7 +5,6 @@ import pickle as pkl
 from fss import fss
 from time import time
 os.makedirs("data", exist_ok=True)
-
 def load():
     data_processing = fss()
     for file in os.listdir("data"):
@@ -14,9 +13,9 @@ def load():
                 model = pkl.load(f)
             size = model.get_spin().shape[0]
             temperature = model.get_temperature()
-            data_processing.add_raw_data(model.get_e(), model.get_m(), temperature, size)
+            data_processing.load_raw_data(model.get_e(), np.abs(model.get_m()), temperature, size)
     return data_processing
-
+# load existing data if available
 existing_data = load()
 
 t_val = np.arange(2.1,2.3,0.005)

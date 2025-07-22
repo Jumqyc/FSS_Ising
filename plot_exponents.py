@@ -1,18 +1,9 @@
 import matplotlib.pyplot as plt
 import numpy as np
-import os
-import pickle as pkl
-from fss import fss
-    
-data = fss()
-for file in os.listdir("data"):
-    if file.endswith(".pkl"):
-        with open(os.path.join("data", file), "rb") as f:
-            model = pkl.load(f)
-        size = model.get_spin().shape[0]
-        temperature = model.get_temperature()
-        data.add_raw_data(model.get_e(), np.abs(model.get_m()), temperature, size)
 
+from pklwrite import load
+
+data = load()
 print('bound for y_t')
 data.fit_a(data.logd[2])
 data.fit_a(data.logd[1])
