@@ -207,8 +207,7 @@ class fss:
         Args:
             f (str | Callable): The function to plot the data. If a string is provided, it will be converted to a lambda function.
             scale (bool): If True, scale the data according to the best fit parameters.
-        >>> data.plot(lambda m, e, L, T: np.mean(m/L**2))
-        # Plots the average magnetization per site
+        >>> data.plot(lambda m, e, L, T: np.mean(m/L**2)) # Plots the average magnetization per site
         >>> data.plot('<m/L**2>') # this one will also work
 
         >>> data.plot('(<m**2>-<m**2>)/L**2/T') # susceptibility
